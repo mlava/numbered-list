@@ -6,30 +6,6 @@ export default {
             callback: () => numberedList()
         });
 
-        /*
-                function ready(fn) {
-                    if (document.readyState === "complete" || document.readyState === "interactive") {
-                        setTimeout(fn, 1);
-                    } else {
-                        document.addEventListener("DOMContentLoaded", fn);
-                    }
-                }
-                ready(initiateObserver);
-        
-                function initiateObserver() {
-                    console.log("Starting Mutation Observer for Todoist Tasks");
-                    const targetNode = document.getElementsByClassName("rm-xparser-default-Refresh Numbering")[0];
-                    console.error(targetNode);
-                    const config = { attributes: true, childList: true, subtree: true };
-                    const callback = function (mutationsList, observer) {
-                        for (const mutation of mutationsList) {
-                            //console.error(mutation);
-                        }
-                    };
-                    const observer = new MutationObserver(callback);
-                    observer.observe(targetNode, config);
-                }
-        */
         async function numberedList() {
             var startBlock = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
 
@@ -114,10 +90,6 @@ export default {
                     }
                 }
             }
-
-            const targetNode = document.getElementsByClassName("rm-xparser-default-Refresh");
-            targetNode[0].onclick = numberedList;
-
         };
     },
     onunload: () => {
