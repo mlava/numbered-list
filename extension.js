@@ -1,12 +1,38 @@
+var buttonTrigger = false;
+
 export default {
     onload: ({ extensionAPI }) => {
+        var buttonUid;
+
+        checkFirstRun();
 
         window.roamAlphaAPI.ui.commandPalette.addCommand({
             label: "Convert to Numbered List",
             callback: () => numberedList()
         });
 
-        async function numberedList() {
+        const args = {
+            text: "REFRESHNUMBEREDLIST",
+            help: "Refresh Numbered List",
+            handler: (context) => () => {
+                buttonUid = context.targetUid;
+                buttonTrigger = context.variables.buttonTrigger;
+                numberedList(buttonTrigger, buttonUid);
+            },
+        };
+
+        if (window.roamjs?.extension?.smartblocks) {
+            window.roamjs.extension.smartblocks.registerCommand(args);
+        } else {
+            document.body.addEventListener(
+                `roamjs:smartblocks:loaded`,
+                () =>
+                    window.roamjs?.extension.smartblocks &&
+                    window.roamjs.extension.smartblocks.registerCommand(args)
+            );
+        }
+
+        async function numberedList(buttonTrigger, buttonUid) {
             var startBlock = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
 
             let q = `[:find (pull ?page
@@ -17,9 +43,10 @@ export default {
              :where [?page :block/uid "${startBlock}"]  ]`;
             var info = await window.roamAlphaAPI.q(q);
 
-            var buttonString = "{{Refresh}}";
+            var buttonString = "{{Refresh:SmartBlock:Refresh Numbered List:buttonTrigger=true,RemoveButton=false}}";
             var sortedInfo = await sortObjectsByOrder(info[0][0].children);
             var orderCorr = 0;
+
             if (sortedInfo[0].string != buttonString) {
                 if (info[0][0].parents) {
                     await window.roamAlphaAPI.createBlock({
@@ -90,6 +117,17 @@ export default {
                     }
                 }
             }
+            buttonTrigger = false;
+            var results = await window.roamAlphaAPI.q(q);
+            for (var m = 0; m < results[0][0].children.length; m++) {
+                if (results[0][0].children[m].string == buttonString) {
+                    for (var n=0; n<results[0][0].children[m].children?.length; n++) {
+                        window.roamAlphaAPI.deleteBlock({"block": { "uid": results[0][0].children[m].children[n].uid }
+                        })
+                    }
+                }
+            }
+            return;
         };
     },
     onunload: () => {
@@ -108,4 +146,35 @@ async function sortObjectsByOrder(o) {
     return o.sort(function (a, b) {
         return a.order - b.order;
     });
+}
+
+async function checkFirstRun() {
+    var page = await window.roamAlphaAPI.q(`[:find ?e :where [?e :node/title "Numbered List Extension"]]`);
+    if (page.length > 0) { // the page already exists
+        return;
+    } else { // no workspaces page created, so create one
+        let newUid = roamAlphaAPI.util.generateUID();
+        await window.roamAlphaAPI.createPage({ page: { title: "Numbered List Extension", uid: newUid } });
+        let string1 = "Thank you for installing the Numbered List extension for Roam Research. This page has been automatically generated to allow creation of a SmartBlock to allow you to refresh your numbered lists after you move things around and re-order them.";
+        await createBlock(string1, newUid, 0);
+        let string2 = "Below the horizontal line is the Refresh Numbered List SmartBlock. Please don't change it unless you know what you are doing!";
+        await createBlock(string2, newUid, 1);
+        let string3 = "---";
+        await createBlock(string3, newUid, 2);
+        let string4 = "#SmartBlock Refresh Numbered List";
+        let subUID = await createBlock(string4, newUid, 3);
+        let string5 = "<%REFRESHNUMBEREDLIST%>";
+        await createBlock(string5, subUID, 1);
+        await window.roamAlphaAPI.ui.mainWindow.openPage({ page: { uid: newUid } });
+    }
+}
+
+async function createBlock(string, uid, order) {
+    let newUid = roamAlphaAPI.util.generateUID();
+    await window.roamAlphaAPI.createBlock(
+        {
+            location: { "parent-uid": uid, order: order },
+            block: { string: string.toString(), uid: newUid }
+        });
+    return newUid;
 }
