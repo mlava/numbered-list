@@ -191,7 +191,7 @@ async function checkFirstRun() {
         await window.roamAlphaAPI.createPage({ page: { title: "Numbered List Extension", uid: newUid } });
         let string1 = "Thank you for installing the Numbered List extension for Roam Research. This page has been automatically generated to allow creation of a SmartBlock to allow you to refresh your numbered lists after you move things around and re-order them.";
         await createBlock(string1, newUid, 0);
-        let string2 = "Below the horizontal line is the Refresh Numbered List SmartBlock. Please don't change it unless you know what you are doing!";
+        let string2 = "Below the horizontal line are the Refresh Numbered List and Remove Numbered List SmartBlocks. Please don't change them unless you know what you are doing!";
         await createBlock(string2, newUid, 1);
         let string3 = "---";
         await createBlock(string3, newUid, 2);
