@@ -183,10 +183,8 @@ export default {
 }
 
 async function checkFirstRun() {
-    var page = await window.roamAlphaAPI.q(`[:find ?e :where [?e :node/title "Numbered List Extension"]]`);
-    if (page.length > 0) { // the page already exists
-        return;
-    } else { // no workspaces page created, so create one
+    var page = await window.roamAlphaAPI.q(`[:find (pull ?page [:block/string :block/uid {:block/children ...}]) :where [?page :node/title "Numbered List Extension"]  ]`);
+    if (page.length == 0) { // no page created, so create one
         let newUid = roamAlphaAPI.util.generateUID();
         await window.roamAlphaAPI.createPage({ page: { title: "Numbered List Extension", uid: newUid } });
         let string1 = "Thank you for installing the Numbered List extension for Roam Research. This page has been automatically generated to allow creation of a SmartBlock to allow you to refresh your numbered lists after you move things around and re-order them.";
@@ -204,6 +202,22 @@ async function checkFirstRun() {
         let string7 = "<%REMOVENUMBEREDLIST%>";
         await createBlock(string7, subUID1, 1);
         await window.roamAlphaAPI.ui.mainWindow.openPage({ page: { uid: newUid } });
+    } else {
+        let blocks = page[0][0].children;
+        var remove = undefined;
+        if (blocks.length > 0) {
+            for (var i = 0; i < blocks.length; i++) {
+                if (blocks[i].string == "#SmartBlock Remove Numbered List") {
+                    remove = blocks[i].uid;
+                }
+            }
+        }
+        if (remove == undefined) {
+            let string6 = "#SmartBlock Remove Numbered List";
+            let subUID1 = await createBlock(string6, page[0][0].uid, 4);
+            let string7 = "<%REMOVENUMBEREDLIST%>";
+            await createBlock(string7, subUID1, 1);
+        }
     }
 }
 
