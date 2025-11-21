@@ -1,9 +1,118 @@
 var buttonTrigger = false;
+var ignoreStyleEl = null;
+var ignoreTokenStyleInterval;
+
+function removeIgnoreTokenStyle() {
+    if (ignoreStyleEl && ignoreStyleEl.parentNode) {
+        ignoreStyleEl.parentNode.removeChild(ignoreStyleEl);
+    }
+    ignoreStyleEl = null;
+}
 
 export default {
     onload: ({ extensionAPI }) => {
 
         checkFirstRun();
+
+        const NUMBER_PREFIX = /^(\d+(?:\.\d+)*)\s*:\s+/;
+        const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const getNumberSeparator = () => extensionAPI.settings.get("numberSeparator") || ": ";
+        const getIgnoreToken = () => extensionAPI.settings.get("ignoreToken") || "#nonumber";
+        const getRestartAtHeading = () => false; // temporarily disabled
+        const getIgnoreAppliesToChildren = () => {
+            const val = extensionAPI.settings.get("ignoreAppliesToChildren");
+            return val === undefined ? true : !!val;
+        };
+        const getHideIgnoreTokenTags = () => !!extensionAPI.settings.get("hideIgnoreTokenTags");
+        const getNumberPrefixRegex = () => {
+            const separator = getNumberSeparator() || ": ";
+            const escapedSeparator = escapeRegExp(separator);
+            return new RegExp(`^(\\d+(?:\\.\\d+)*)\\s*${escapedSeparator}\\s*`);
+        };
+        const shouldIgnoreBlock = (string) => {
+            const ignoreToken = getIgnoreToken();
+            return !!ignoreToken && string?.includes(ignoreToken);
+        };
+
+        extensionAPI.settings.panel.create({
+            tabTitle: "Numbered List",
+            settings: [
+                {
+                    id: "numberSeparator",
+                    name: "Number Separator",
+                    description: "String between the numeric prefix and the block text. E.g. \": \", \") \", \" - \".",
+                    action: { type: "input", placeholder: ": " },
+                },
+                {
+                    id: "ignoreToken",
+                    name: "Ignore Token",
+                    description: "Blocks containing this #tag will not be numbered.",
+                    action: { type: "input", placeholder: "nonumber" },
+                },
+                /* // new feature, commented out for now
+                {
+                    id: "restartAtHeading",
+                    name: "Restart at Heading",
+                    description: "Restart numbering at each heading (H1/H2/H3).",
+                    action: { type: "switch" },
+                },
+                */
+                {
+                    id: "hideIgnoreTokenTags",
+                    name: "Hide Ignore Token tags",
+                    description: "Hide page-ref tags that match the ignore token (#nonumber by default).",
+                    action: { type: "switch" },
+                },
+                {
+                    id: "ignoreAppliesToChildren",
+                    name: "Ignore descendants",
+                    description: "When on, blocks with the ignore token are skipped along with their children. When off, only the tagged block is skipped.",
+                    action: { type: "switch" },
+                },
+            ],
+        });
+
+        const getIgnoreTokenTag = () => {
+            const token = getIgnoreToken();
+            if (!token) return "";
+            const trimmed = token.trim();
+            if (trimmed.startsWith("[[") && trimmed.endsWith("]]")) {
+                return trimmed.slice(2, -2).trim();
+            }
+            if (trimmed.startsWith("#")) {
+                return trimmed.slice(1).trim();
+            }
+            return trimmed;
+        };
+
+        const applyIgnoreTokenStyle = () => {
+            const hide = getHideIgnoreTokenTags();
+            const tagValue = getIgnoreTokenTag();
+            if (!hide || !tagValue) {
+                removeIgnoreTokenStyle();
+                return;
+            }
+            const css = `span.rm-page-ref.rm-page-ref--tag[data-tag="${tagValue}"] { display: none !important; }`;
+            if (!ignoreStyleEl) {
+                ignoreStyleEl = document.createElement("style");
+                ignoreStyleEl.id = "numbered-list-ignore-token-style";
+                document.head.appendChild(ignoreStyleEl);
+            }
+            ignoreStyleEl.textContent = css;
+        };
+
+        applyIgnoreTokenStyle();
+        let lastIgnoreToken = getIgnoreToken();
+        let lastHideIgnoreTokenTags = getHideIgnoreTokenTags();
+        ignoreTokenStyleInterval = setInterval(() => {
+            const currentIgnoreToken = getIgnoreToken();
+            const currentHide = getHideIgnoreTokenTags();
+            if (currentIgnoreToken !== lastIgnoreToken || currentHide !== lastHideIgnoreTokenTags) {
+                lastIgnoreToken = currentIgnoreToken;
+                lastHideIgnoreTokenTags = currentHide;
+                applyIgnoreTokenStyle();
+            }
+        }, 2000);
 
         window.roamAlphaAPI.ui.commandPalette.addCommand({
             label: "Convert to Numbered List",
@@ -18,18 +127,20 @@ export default {
         const args = {
             text: "REFRESHNUMBEREDLIST",
             help: "Refresh Numbered List",
-            handler: (context) => () => {
+            handler: (context) => async () => {
                 buttonTrigger = context.variables.buttonTrigger;
-                numberedList(buttonTrigger);
+                await numberedList(buttonTrigger);
+                return "";
             },
         };
 
         const args1 = {
             text: "REMOVENUMBEREDLIST",
             help: "Remove Numbered List",
-            handler: (context) => () => {
+            handler: (context) => async () => {
                 buttonTrigger = context.variables.buttonTrigger;
-                removeNumberedList(buttonTrigger);
+                await removeNumberedList(buttonTrigger);
+                return "";
             },
         };
 
@@ -60,8 +171,12 @@ export default {
             var buttonString = "{{Refresh Numbering:SmartBlock:Refresh Numbered List:buttonTrigger=true,RemoveButton=false}} {{Remove Numbering:SmartBlock:Remove Numbered List:buttonTrigger=true,RemoveButton=false}}";
             var sortedInfo = await sortObjectsByOrder(info[0][0].children);
             var orderCorr = 0;
+            const separator = getNumberSeparator();
+            const restartAtHeading = getRestartAtHeading();
+            const numberPrefixRegex = getNumberPrefixRegex();
+            const ignoreDescendants = getIgnoreAppliesToChildren();
 
-            if (sortedInfo[0].string != buttonString) {
+            if (sortedInfo.length === 0 || sortedInfo[0].string != buttonString) {
                 if (info[0][0].parents) {
                     await window.roamAlphaAPI.createBlock({
                         "location": { "parent-uid": info[0][0].parents[0].uid, "order": -1 },
@@ -84,27 +199,79 @@ export default {
                 }
             }
 
-            for (var i = 0; i < info[0][0].children.length; i++) {
-                const regex = /^\d.{0,10}: /;
-                var numberSection = info[0][0].children[i].order + 1 - orderCorr;
-                var blockTextString = info[0][0].children[i].string.replace(regex, "");
-                var headerString = "" + numberSection + ": " + blockTextString;
-                await updateBlock(info[0][0].children[i].uid, headerString);
-                if (info[0][0].children[i].hasOwnProperty('children')) {
-                    await loop(info[0][0].children[i], numberSection);
+            var topLevelBlocks = await sortObjectsByOrder(info[0][0].children);
+
+            if (restartAtHeading) {
+                let itemIndex = 0;
+                for (var i = 0; i < topLevelBlocks.length; i++) {
+                    const block = topLevelBlocks[i];
+                    if (block.string === buttonString) {
+                        continue;
+                    }
+                    const numberSection = itemIndex + 1;
+                    if (shouldIgnoreBlock(block.string)) {
+                        if (!ignoreDescendants && block.hasOwnProperty('children')) {
+                            await numberNestedBlocks(block.children, String(numberSection), separator, numberPrefixRegex);
+                        }
+                        continue;
+                    }
+                    if (block.heading > 0) {
+                        const cleanedHeading = block.string.replace(numberPrefixRegex, "");
+                        if (cleanedHeading !== block.string) {
+                            await updateBlock(block.uid, cleanedHeading);
+                        }
+                        itemIndex = 0;
+                        if (block.hasOwnProperty('children')) {
+                            await numberNestedBlocks(block.children, "", separator, numberPrefixRegex);
+                        }
+                        continue;
+                    }
+                    itemIndex = itemIndex + 1;
+                    await applyNumbering(block, String(numberSection), separator, numberPrefixRegex);
+                }
+            } else {
+                for (var i = 0; i < topLevelBlocks.length; i++) {
+                    const block = topLevelBlocks[i];
+                    if (block.string === buttonString) {
+                        continue;
+                    }
+                    var numberSection = block.order + 1 - orderCorr;
+                    if (shouldIgnoreBlock(block.string)) {
+                        if (!ignoreDescendants && block.hasOwnProperty('children')) {
+                            await numberNestedBlocks(block.children, String(numberSection), separator, numberPrefixRegex);
+                        }
+                        continue;
+                    }
+                    await applyNumbering(block, String(numberSection), separator, numberPrefixRegex);
                 }
             }
 
-            async function loop(blocks, headerString) {
-                for (var j = 0; j < blocks.children.length; j++) {
-                    const regex = /^\d.{0,10}: /;
-                    var numberSubSection = blocks.children[j].order + 1;
-                    var newHeader = headerString + "." + numberSubSection;
-                    var blockTextSubString = blocks.children[j].string.replace(regex, "");
-                    var headerSubString = newHeader + ": " + blockTextSubString;
-                    await updateBlock(blocks.children[j].uid, headerSubString);
-                    if (blocks.children[j].hasOwnProperty('children')) { 
-                        await loop(blocks.children[j], newHeader);
+            async function applyNumbering(block, numberSection, separator, prefixRegex) {
+                const blockTextString = block.string.replace(prefixRegex, "");
+                var headerString = "" + numberSection + separator + blockTextString;
+                await updateBlock(block.uid, headerString);
+                if (block.hasOwnProperty('children')) {
+                    await numberNestedBlocks(block.children, numberSection, separator, prefixRegex);
+                }
+            }
+
+            async function numberNestedBlocks(blocks, headerString, separator, prefixRegex) {
+                var sortedBlocks = await sortObjectsByOrder(blocks);
+                for (var j = 0; j < sortedBlocks.length; j++) {
+                    const child = sortedBlocks[j];
+                    var numberSubSection = child.order + 1;
+                    var newHeader = headerString ? headerString + "." + numberSubSection : "" + numberSubSection;
+                    if (shouldIgnoreBlock(child.string)) {
+                        if (!ignoreDescendants && child.hasOwnProperty('children')) {
+                            await numberNestedBlocks(child.children, newHeader, separator, prefixRegex);
+                        }
+                        continue;
+                    }
+                    var blockTextSubString = child.string.replace(prefixRegex, "");
+                    var headerSubString = newHeader + separator + blockTextSubString;
+                    await updateBlock(child.uid, headerSubString);
+                    if (child.hasOwnProperty('children')) { 
+                        await numberNestedBlocks(child.children, newHeader, separator, prefixRegex);
                     }
                 }
             }
@@ -119,7 +286,7 @@ export default {
                     }
                 }
             }
-            return;
+            return "";
         };
 
         async function removeNumberedList(buttonTrigger) {
@@ -134,6 +301,7 @@ export default {
             var info = await window.roamAlphaAPI.q(q);
 
             var buttonString = "{{Refresh Numbering:SmartBlock:Refresh Numbered List:buttonTrigger=true,RemoveButton=false}} {{Remove Numbering:SmartBlock:Remove Numbered List:buttonTrigger=true,RemoveButton=false}}";
+            const numberPrefixRegex = getNumberPrefixRegex();
 
             for (var z = 0; z < info[0][0].children.length; z++) {
                 if (info[0][0].children[z].string == buttonString) {
@@ -145,9 +313,10 @@ export default {
 
             async function loop(blocks) {
                 for (var i = 0; i < blocks.length; i++) {
-                    const regex = /^\d.{0,10}: /;
-                    var blockTextString = blocks[i].string.replace(regex, "");
-                    await updateBlock(blocks[i].uid, blockTextString);
+                    var blockTextString = blocks[i].string.replace(numberPrefixRegex, "");
+                    if (blockTextString !== blocks[i].string) {
+                        await updateBlock(blocks[i].uid, blockTextString);
+                    }
                     if (blocks[i].hasOwnProperty('children')) {
                         await loop(blocks[i].children)
                     }
@@ -165,7 +334,7 @@ export default {
                     }
                 }
             }
-            return;
+            return "";
         };
     },
     onunload: () => {
@@ -179,6 +348,12 @@ export default {
             window.roamjs.extension.smartblocks.unregisterCommand("REFRESHNUMBEREDLIST");
             window.roamjs.extension.smartblocks.unregisterCommand("REMOVENUMBEREDLIST");
         };
+        if (typeof removeIgnoreTokenStyle === "function") {
+            removeIgnoreTokenStyle();
+        }
+        if (typeof ignoreTokenStyleInterval !== "undefined") {
+            clearInterval(ignoreTokenStyleInterval);
+        }
     }
 }
 

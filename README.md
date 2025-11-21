@@ -2,7 +2,16 @@ This extension allows you to apply hierarchical numbering to blocks on a Roam Re
 
 This might be useful if you're writing a book and you need numbered headings for each section.
 
-**NEW:**
+**New:**
+- Configurable number separators
+  - default `: `
+  - examples: `: `, `) `, ` - `
+- Ignore Token: blocks containing this text are skipped when numbering (default `#nonumber`).
+  - Ignore descendants (toggle): on = skip the tagged block and its children; off = skip only the tagged block.
+  - Hide Ignore Token tags: when enabled, tags matching the ignore token are hidden via injected CSS. Updates automatically when you change the token or toggle the setting.
+- Prefix safety: numbering and removal only touch prefixes that match hierarchical patterns like `1:`, `1.2:`, `1.2.3:` using the configured separator.
+
+*Previously:*
 - There is a new button now implemented, that will allow you to remove any numbering and return your page to it's original state.
 - Indent to any level you like (previous limit was 6)
 
