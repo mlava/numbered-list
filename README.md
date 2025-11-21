@@ -7,7 +7,7 @@ This might be useful if you're writing a book and you need numbered headings for
   - default `: `
   - examples: `: `, `) `, ` - `
 - Ignore Token: blocks containing this text are skipped when numbering (default `#nonumber`).
-  - Ignore descendants (toggle): on = skip the tagged block and its children; off = skip only the tagged block.
+  - Ignore descendants (toggle): on = skip the tagged block *and its children*; off = skip only the tagged block.
   - Hide Ignore Token tags: when enabled, tags matching the ignore token are hidden via injected CSS. Updates automatically when you change the token or toggle the setting.
 - Prefix safety: numbering and removal only touch prefixes that match hierarchical patterns like `1:`, `1.2:`, `1.2.3:` using the configured separator.
 
